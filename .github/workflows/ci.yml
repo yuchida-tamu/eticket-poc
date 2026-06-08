@@ -6,20 +6,80 @@ on:
   pull_request:
     branches: [main]
 
+# Monorepo: apps/backend (Laravel) and apps/mobile (Expo). Each job no-ops
+# until its app directory exists, so CI is green on single-app PRs and runs
+# fully once both apps are merged to main.
 jobs:
-  check:
+  backend:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Detect backend
+        id: detect
+        run: |
+          if [ -d apps/backend ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false (skipping)" && echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up PHP
+        if: steps.detect.outputs.present == 'true'
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+
+      - name: Install dependencies
+        if: steps.detect.outputs.present == 'true'
+        working-directory: apps/backend
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Prepare app
+        if: steps.detect.outputs.present == 'true'
+        working-directory: apps/backend
+        run: |
+          cp -n .env.example .env || true
+          php artisan key:generate
+
+      - name: Lint (Pint)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: apps/backend
+        run: ./vendor/bin/pint --test
+
+      - name: Test (Pest)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: apps/backend
+        run: ./vendor/bin/pest
+
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Detect mobile
+        id: detect
+        run: |
+          if [ -d apps/mobile ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false (skipping)" && echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Set up Node
+        if: steps.detect.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - name: Install dependencies
+        if: steps.detect.outputs.present == 'true'
+        working-directory: apps/mobile
         run: npm ci
 
       - name: Run checks
+        if: steps.detect.outputs.present == 'true'
+        working-directory: apps/mobile
         run: npm run check
