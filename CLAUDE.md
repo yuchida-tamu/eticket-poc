@@ -85,3 +85,7 @@ Backend (Laravel) equivalents, run from the backend app directory:
 5. Push branch, create PR via `gh pr create`
 6. Wait for review
 7. On merge, switch to `main`, pull, delete local branch
+
+## Workflow settings
+
+- Auto-merge: on
