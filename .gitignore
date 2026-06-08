@@ -1,0 +1,31 @@
+.DS_Store
+*.log
+.env
+.env.*
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+.claude/settings.local.json
+.init-project-state.json
+
+# Node / TypeScript / Expo (mobile)
+node_modules/
+dist/
+build/
+coverage/
+.next/
+.expo/
+*.tsbuildinfo
+
+# PHP / Laravel (backend)
+/vendor/
+/storage/*.key
+/public/storage
+composer.phar
+
+# Apple Wallet pass signing material (do not commit)
+*.pem
+*.p12
+*.pkpass
