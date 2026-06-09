@@ -8,6 +8,7 @@
 !.vscode/extensions.json
 *.swp
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 .init-project-state.json
 
 # Node / TypeScript / Expo (mobile)
@@ -29,3 +30,5 @@ composer.phar
 *.pem
 *.p12
 *.pkpass
+
+.cert
