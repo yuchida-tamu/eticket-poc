@@ -1,58 +1,58 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# eticket-poc — backend
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Laravel service that issues signed Apple Wallet `.pkpass` files (with an NFC payload) via [`spatie/laravel-mobile-pass`](https://github.com/spatie/laravel-mobile-pass), backed by Postgres.
 
-## About Laravel
+## Endpoints
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/health` | Liveness check → `{"status":"ok"}` (no DB required). |
+| `POST` | `/api/passes` | Issues a freshly signed `.pkpass` (event ticket) with a unique serial number and an NFC payload. Returns `application/vnd.apple.pkpass`; the serial is also echoed in the `X-Pass-Serial` header. |
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Local setup
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+composer install
+cp .env.example .env
+php artisan key:generate
+./vendor/bin/pest      # tests
+./vendor/bin/pint      # format
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+## Apple Wallet pass signing
 
-## Contributing
+Issuing a real pass needs a **Pass Type ID certificate** from your Apple Developer account.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+1. **Place the certificate** outside the app, in the repo-root `.cert/` directory (gitignored, along with `*.p12`/`*.pem`/`*.pkpass`).
 
-## Code of Conduct
+2. **Convert Apple's legacy `.p12`.** Apple exports `.p12` files with legacy RC2-40 encryption, which OpenSSL 3 / PHP's `openssl_pkcs12_read()` **cannot** read (`error:0308010C ... unsupported`). Re-encrypt it to AES-256 once:
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+   ```bash
+   cd .cert
+   openssl pkcs12 -in eticket_certificate.p12 -legacy -nodes -passin pass:YOURPASS -out _tmp.pem
+   openssl pkcs12 -export -in _tmp.pem -out eticket_certificate_modern.p12 -passout pass:YOURPASS
+   rm _tmp.pem
+   ```
 
-## Security Vulnerabilities
+   Point `MOBILE_PASS_APPLE_CERTIFICATE_PATH` at the `_modern.p12`. The bundled Apple WWDR (G4) intermediate handles the rest of the chain.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+3. **Set the Apple env vars** in `.env` (see `.env.example`):
 
-## License
+   ```env
+   MOBILE_PASS_APPLE_TYPE_IDENTIFIER=pass.com.your.passtype
+   MOBILE_PASS_APPLE_TEAM_IDENTIFIER=YOURTEAMID
+   MOBILE_PASS_APPLE_ORGANIZATION_NAME="Your Org"
+   MOBILE_PASS_APPLE_CERTIFICATE_PATH=/abs/path/to/.cert/eticket_certificate_modern.p12
+   MOBILE_PASS_APPLE_CERTIFICATE_PASSWORD=YOURPASS
+   ```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+4. **NFC payload.** Passes embed a base64 (DER) ECC P-256 **public** key in their `nfc` dictionary. A committed default lives at `resources/passes/nfc_public_key.b64`; override with `ETICKET_NFC_PUBLIC_KEY`. To mint your own keypair:
+
+   ```bash
+   openssl ecparam -name prime256v1 -genkey -noout -out nfc_private.pem
+   openssl ec -in nfc_private.pem -pubout -outform DER | base64   # -> the public key
+   ```
+
+> The signed-pass test (`tests/Feature/PassGenerationTest.php`) is **skipped** automatically when no certificate is configured (e.g. in CI), so the suite stays green without secrets. The pass-assembly test always runs.
+
+> Whether a third-party-issued NFC pass is actually accepted/read by Apple's ProximityReader on-device is the project's open risk (see `docs/PRD.md` → Open Questions); this backend produces a structurally valid, signed, NFC-bearing pass.
